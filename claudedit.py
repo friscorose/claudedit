@@ -28,8 +28,150 @@ from textual.widgets import (
     Static,
     TextArea,
     Label,
+    OptionList,
+    Tree,
 )
+from textual.widgets.option_list import Option
+from textual.widgets.tree import TreeNode
 from textual.screen import ModalScreen
+from textual.message import Message
+
+
+class CustomDirectoryTree(Static):
+    """Custom directory tree widget with parent directory navigation."""
+    
+    def __init__(self, path: str, **kwargs):
+        super().__init__(**kwargs)
+        self.current_path = Path(path)
+        
+    def compose(self) -> ComposeResult:
+        yield Tree("Files", id="file-tree-widget")
+        
+    def on_mount(self) -> None:
+        """Initialize the tree with current directory contents."""
+        self.refresh_tree()
+        
+    def refresh_tree(self) -> None:
+        """Refresh the tree with current directory contents."""
+        tree = self.query_one("#file-tree-widget", Tree)
+        tree.clear()
+        
+        root = tree.root
+        root.set_label(f"📁 {self.current_path.name or str(self.current_path)}")
+        
+        # Add parent directory option if not at root
+        if self.current_path.parent != self.current_path:
+            parent_node = root.add("📁 ..", data={"type": "parent", "path": self.current_path.parent})
+            parent_node.allow_expand = False
+        
+        # Add directories first
+        try:
+            directories = sorted([p for p in self.current_path.iterdir() if p.is_dir()])
+            for dir_path in directories:
+                dir_node = root.add(f"📁 {dir_path.name}", data={"type": "directory", "path": dir_path})
+                dir_node.allow_expand = False
+        except PermissionError:
+            pass
+            
+        # Add files
+        try:
+            files = sorted([p for p in self.current_path.iterdir() if p.is_file()])
+            for file_path in files:
+                icon = "📄"
+                if file_path.suffix.lower() in ['.md', '.markdown']:
+                    icon = "📝"
+                elif file_path.suffix.lower() in ['.txt', '.text']:
+                    icon = "📄"
+                file_node = root.add(f"{icon} {file_path.name}", data={"type": "file", "path": file_path})
+                file_node.allow_expand = False
+        except PermissionError:
+            pass
+            
+        root.expand()
+        
+    def navigate_to(self, path: Path) -> None:
+        """Navigate to a different directory."""
+        if path.is_dir():
+            self.current_path = path
+            self.refresh_tree()
+
+    @on(Tree.NodeSelected)
+    def on_node_selected(self, event: Tree.NodeSelected) -> None:
+        """Handle node selection in the tree."""
+        if event.node.data:
+            node_data = event.node.data
+            if node_data["type"] == "parent":
+                self.navigate_to(node_data["path"])
+                self.post_message(DirectoryChanged(node_data["path"]))
+            elif node_data["type"] == "directory":
+                self.navigate_to(node_data["path"])
+                self.post_message(DirectoryChanged(node_data["path"]))
+            elif node_data["type"] == "file":
+                self.post_message(FileSelected(node_data["path"]))
+
+
+class DirectoryChanged(Message):
+    """Message sent when directory changes."""
+    def __init__(self, path: Path):
+        super().__init__()
+        self.path = path
+
+
+class FileSelected(Message):
+    """Message sent when a file is selected."""
+    def __init__(self, path: Path):
+        super().__init__()
+        self.path = path
+
+
+class FormatMenuScreen(ModalScreen):
+    """Modal screen for markdown formatting options."""
+    
+    def compose(self) -> ComposeResult:
+        with Container(id="format-menu-dialog"):
+            yield Label("Format Selected Text", id="format-menu-title")
+            yield OptionList(
+                Option("Heading 1", id="h1"),
+                Option("Heading 2", id="h2"),
+                Option("Heading 3", id="h3"),
+                Option("Heading 4", id="h4"),
+                Option("Heading 5", id="h5"),
+                Option("Heading 6", id="h6"),
+                Option("Bold", id="bold"),
+                Option("Italic", id="italic"),
+                Option("Bold Italic", id="bold_italic"),
+                Option("Strikethrough", id="strikethrough"),
+                Option("Inline Code", id="code"),
+                Option("Code Block", id="code_block"),
+                Option("Blockquote", id="blockquote"),
+                Option("Unordered List", id="ul"),
+                Option("Ordered List", id="ol"),
+                Option("Link", id="link"),
+                Option("Image", id="image"),
+                Option("Table", id="table"),
+                Option("Horizontal Rule", id="hr"),
+                id="format-options"
+            )
+            with Horizontal(id="format-menu-buttons"):
+                yield Button("Apply", variant="primary", id="apply-format-button")
+                yield Button("Cancel", variant="default", id="cancel-format-button")
+
+    @on(Button.Pressed, "#apply-format-button")
+    def apply_format(self) -> None:
+        format_options = self.query_one("#format-options", OptionList)
+        if format_options.highlighted is not None:
+            selected_option = format_options.get_option_at_index(format_options.highlighted)
+            self.dismiss(selected_option.id)
+        else:
+            self.dismiss(None)
+
+    @on(Button.Pressed, "#cancel-format-button")
+    def cancel_format(self) -> None:
+        self.dismiss(None)
+
+    @on(OptionList.OptionSelected)
+    def on_option_selected(self, event: OptionList.OptionSelected) -> None:
+        self.dismiss(event.option.id)
 
 
 class SaveAsScreen(ModalScreen):
@@ -73,6 +215,40 @@ class MarkdownEditor(App):
     """A markdown editor with file tree and live preview."""
     
     CSS = """
+    #format-menu-dialog {
+        width: 50;
+        height: 25;
+        background: $surface;
+        border: thick $primary;
+        padding: 1;
+        margin: 2 4;
+        offset: 50% 50%;
+        content-align: center middle;
+    }
+    
+    #format-menu-title {
+        dock: top;
+        text-align: center;
+        text-style: bold;
+        margin-bottom: 1;
+    }
+    
+    #format-options {
+        dock: top;
+        height: 18;
+        margin-bottom: 1;
+    }
+    
+    #format-menu-buttons {
+        dock: bottom;
+        height: 3;
+        align: center middle;
+    }
+    
+    #format-menu-buttons Button {
+        margin: 0 1;
+    }
+    
     #save-as-dialog {
         width: 60;
         height: 9;
@@ -112,7 +288,7 @@ class MarkdownEditor(App):
     
     #file-tree {
         dock: left;
-        width: 30;
+        width: 35;
         border-right: solid $primary;
     }
     
@@ -151,6 +327,7 @@ class MarkdownEditor(App):
         Binding("ctrl+s", "save_file", "Save", priority=True),
         Binding("ctrl+shift+s", "save_as", "Save As", priority=True),
         Binding("ctrl+p", "toggle_preview", "Toggle Preview", priority=True),
+        Binding("ctrl+f", "format_text", "Format", priority=True),
         Binding("ctrl+q", "quit", "Quit", priority=True),
         Binding("f1", "toggle_file_tree", "Toggle Tree", priority=True),
     ]
@@ -161,11 +338,12 @@ class MarkdownEditor(App):
         self.is_modified = False
         self.show_preview = False
         self.show_file_tree = True
+        self.current_directory = Path.cwd()
         
     def compose(self) -> ComposeResult:
         yield Header()
         with Horizontal(classes="container"):
-            yield DirectoryTree(str(Path.cwd()), id="file-tree")
+            yield CustomDirectoryTree(str(self.current_directory), id="file-tree")
             with Vertical(id="editor-container"):
                 yield TextArea(
                     text="# Welcome to Markdown Editor\n\nStart typing your markdown content here...",
@@ -185,7 +363,24 @@ class MarkdownEditor(App):
         """Initialize the editor."""
         self.title = "Markdown Editor"
         self.sub_title = "Untitled"
-        self.update_status("Ready - Press F1 to toggle file tree, Ctrl+P for preview")
+        self.update_status("Ready - Press F1 to toggle file tree, Ctrl+P for preview, Ctrl+F to format")
+
+    @on(DirectoryChanged)
+    def on_directory_changed(self, event: DirectoryChanged) -> None:
+        """Handle directory navigation."""
+        self.current_directory = event.path
+        self.update_status(f"Navigated to: {self.current_directory}")
+
+    @on(FileSelected)
+    def on_file_selected(self, event: FileSelected) -> None:
+        """Handle file selection from the custom directory tree."""
+        file_path = event.path
+        
+        # Only open markdown files and text files
+        if file_path.suffix.lower() in ['.md', '.markdown', '.txt', '.text']:
+            self.open_file_path(file_path)
+        else:
+            self.update_status(f"Cannot open {file_path.suffix} files")
         
     def update_status(self, message: str) -> None:
         """Update the status bar."""
@@ -222,15 +417,10 @@ class MarkdownEditor(App):
             preview_content.update("Preview will appear here...")
     
     @on(DirectoryTree.FileSelected)
-    def on_file_selected(self, event: DirectoryTree.FileSelected) -> None:
-        """Handle file selection from the directory tree."""
-        file_path = Path(event.path)
-        
-        # Only open markdown files and text files
-        if file_path.suffix.lower() in ['.md', '.markdown', '.txt', '.text']:
-            self.open_file_path(file_path)
-        else:
-            self.update_status(f"Cannot open {file_path.suffix} files")
+    def on_directory_tree_file_selected(self, event: DirectoryTree.FileSelected) -> None:
+        """Handle file selection from the standard directory tree (fallback)."""
+        # This is kept for compatibility but won't be used with CustomDirectoryTree
+        pass
     
     def open_file_path(self, file_path: Path) -> None:
         """Open a file in the editor."""
@@ -277,8 +467,8 @@ class MarkdownEditor(App):
             self.update_status(f"Saved as: {file_path}")
             
             # Refresh the directory tree
-            file_tree = self.query_one("#file-tree", DirectoryTree)
-            file_tree.reload()
+            file_tree = self.query_one("#file-tree", CustomDirectoryTree)
+            file_tree.refresh_tree()
             
             return True
         except Exception as e:
@@ -333,10 +523,109 @@ class MarkdownEditor(App):
             text_editor.styles.height = "100%"
             self.update_status("Preview disabled")
     
+    def format_text(self, format_type: str, selected_text: str) -> str:
+        """Apply markdown formatting to selected text."""
+        if not selected_text:
+            selected_text = "text"
+            
+        if format_type == "h1":
+            return f"# {selected_text}"
+        elif format_type == "h2":
+            return f"## {selected_text}"
+        elif format_type == "h3":
+            return f"### {selected_text}"
+        elif format_type == "h4":
+            return f"#### {selected_text}"
+        elif format_type == "h5":
+            return f"##### {selected_text}"
+        elif format_type == "h6":
+            return f"###### {selected_text}"
+        elif format_type == "bold":
+            return f"**{selected_text}**"
+        elif format_type == "italic":
+            return f"*{selected_text}*"
+        elif format_type == "bold_italic":
+            return f"***{selected_text}***"
+        elif format_type == "strikethrough":
+            return f"~~{selected_text}~~"
+        elif format_type == "code":
+            return f"`{selected_text}`"
+        elif format_type == "code_block":
+            return f"```\n{selected_text}\n```"
+        elif format_type == "blockquote":
+            lines = selected_text.split('\n')
+            return '\n'.join(f"> {line}" for line in lines)
+        elif format_type == "ul":
+            lines = selected_text.split('\n')
+            return '\n'.join(f"- {line}" for line in lines)
+        elif format_type == "ol":
+            lines = selected_text.split('\n')
+            return '\n'.join(f"{i+1}. {line}" for i, line in enumerate(lines))
+        elif format_type == "link":
+            return f"[{selected_text}](url)"
+        elif format_type == "image":
+            return f"![{selected_text}](image_url)"
+        elif format_type == "table":
+            return f"| {selected_text} | Column 2 |\n|----------|----------|\n| Row 1    | Data     |\n| Row 2    | Data     |"
+        elif format_type == "hr":
+            return "---"
+        else:
+            return selected_text
+
+    def action_format_text(self) -> None:
+        """Show the format menu."""
+        def handle_format(format_type: Optional[str]) -> None:
+            if format_type:
+                text_editor = self.query_one("#text-editor", TextArea)
+                
+                # Get selected text or current word
+                selection = text_editor.selected_text
+                if not selection:
+                    # If no selection, get current word or use placeholder
+                    cursor_pos = text_editor.cursor_position
+                    text = text_editor.text
+                    # Simple word extraction (could be improved)
+                    start = cursor_pos
+                    end = cursor_pos
+                    while start > 0 and text[start-1].isalnum():
+                        start -= 1
+                    while end < len(text) and text[end].isalnum():
+                        end += 1
+                    selection = text[start:end] if start < end else ""
+                
+                formatted_text = self.format_text(format_type, selection)
+                
+                if text_editor.selected_text:
+                    # Replace selected text
+                    text_editor.replace(formatted_text, text_editor.selection.start, text_editor.selection.end)
+                else:
+                    # Insert at cursor position
+                    text_editor.insert(formatted_text)
+                
+                self.is_modified = True
+                self.update_title()
+                self.update_status(f"Applied {format_type} formatting")
+                
+                if self.show_preview:
+                    self.update_preview()
+        
+        self.push_screen(FormatMenuScreen(), handle_format)
+
+    def action_go_up_directory(self) -> None:
+        """Navigate to parent directory."""
+        parent = self.current_directory.parent
+        if parent != self.current_directory:  # Prevent going above root
+            self.current_directory = parent
+            file_tree = self.query_one("#file-tree", DirectoryTree)
+            file_tree.path = str(self.current_directory)
+            file_tree.reload()
+            self.update_status(f"Navigated to: {self.current_directory}")
+        else:
+            self.update_status("Already at root directory")
     def action_toggle_file_tree(self) -> None:
         """Toggle the file tree visibility."""
         self.show_file_tree = not self.show_file_tree
-        file_tree = self.query_one("#file-tree", DirectoryTree)
+        file_tree = self.query_one("#file-tree", CustomDirectoryTree)
         
         if self.show_file_tree:
             file_tree.remove_class("hidden")
