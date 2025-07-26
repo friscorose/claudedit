@@ -15,7 +15,7 @@ from typing import Optional
 
 from rich.markdown import Markdown
 from rich.syntax import Syntax
-from textual import on
+from textual import on, events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical, ScrollableContainer
@@ -35,6 +35,159 @@ from textual.widgets.option_list import Option
 from textual.widgets.tree import TreeNode
 from textual.screen import ModalScreen
 from textual.message import Message
+
+
+class VimTextArea(TextArea):
+    """TextArea with vim keybindings support."""
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.vim_mode = False
+        self.vim_command_mode = False  # Normal mode vs Insert mode
+        self.vim_status = "INSERT"
+        
+    def enable_vim_mode(self, enabled: bool = True):
+        """Enable or disable vim mode."""
+        self.vim_mode = enabled
+        if enabled:
+            self.vim_command_mode = False  # Start in insert mode
+            self.vim_status = "INSERT"
+        else:
+            self.vim_status = ""
+    
+    async def _on_key(self, event: events.Key) -> None:
+        """Handle vim keybindings."""
+        if not self.vim_mode:
+            await super()._on_key(event)
+            return
+            
+        # Handle Escape key to toggle between modes
+        if event.key == "escape":
+            if self.vim_command_mode:
+                # Already in command mode, stay in command mode
+                pass
+            else:
+                # Switch to command mode
+                self.vim_command_mode = True
+                self.vim_status = "NORMAL"
+            event.prevent_default()
+            return
+            
+        # Command mode (Normal mode) keybindings
+        if self.vim_command_mode:
+            if event.key == "i":
+                # Enter insert mode
+                self.vim_command_mode = False
+                self.vim_status = "INSERT"
+                event.prevent_default()
+                return
+            elif event.key == "a":
+                # Enter insert mode after cursor
+                self.vim_command_mode = False
+                self.vim_status = "INSERT"
+                if self.cursor_position < len(self.text):
+                    self.cursor_position += 1
+                event.prevent_default()
+                return
+            elif event.key == "o":
+                # Open new line below and enter insert mode
+                cursor_line, _ = self.cursor_position
+                self.cursor_position = (cursor_line, len(self.get_line(cursor_line)))
+                self.insert("\n")
+                self.vim_command_mode = False
+                self.vim_status = "INSERT"
+                event.prevent_default()
+                return
+            elif event.key == "shift+o":
+                # Open new line above and enter insert mode
+                cursor_line, _ = self.cursor_position
+                self.cursor_position = (cursor_line, 0)
+                self.insert("\n")
+                self.cursor_position = (cursor_line, 0)
+                self.vim_command_mode = False
+                self.vim_status = "INSERT"
+                event.prevent_default()
+                return
+            elif event.key == "h":
+                # Move left
+                if self.cursor_position > 0:
+                    self.cursor_position -= 1
+                event.prevent_default()
+                return
+            elif event.key == "l":
+                # Move right
+                if self.cursor_position < len(self.text):
+                    self.cursor_position += 1
+                event.prevent_default()
+                return
+            elif event.key == "j":
+                # Move down
+                self.action_cursor_down()
+                event.prevent_default()
+                return
+            elif event.key == "k":
+                # Move up
+                self.action_cursor_up()
+                event.prevent_default()
+                return
+            elif event.key == "w":
+                # Move to next word
+                self.action_cursor_word_right()
+                event.prevent_default()
+                return
+            elif event.key == "b":
+                # Move to previous word
+                self.action_cursor_word_left()
+                event.prevent_default()
+                return
+            elif event.key == "x":
+                # Delete character under cursor
+                if self.cursor_position < len(self.text):
+                    self.delete(1)
+                event.prevent_default()
+                return
+            elif event.key == "d":
+                # Start delete command (simplified - just delete current line)
+                self.action_delete_line()
+                event.prevent_default()
+                return
+            elif event.key == "u":
+                # Undo
+                self.action_undo()
+                event.prevent_default()
+                return
+            elif event.key == "ctrl+r":
+                # Redo
+                self.action_redo()
+                event.prevent_default()
+                return
+            elif event.key == "shift+g":
+                # Go to end of file
+                self.cursor_position = len(self.text)
+                event.prevent_default()
+                return
+            elif event.key == "g":
+                # Go to beginning of file (simplified gg)
+                self.cursor_position = 0
+                event.prevent_default()
+                return
+            elif event.key == "0":
+                # Go to beginning of line
+                self.action_cursor_line_start()
+                event.prevent_default()
+                return
+            elif event.key == "shift+4":  # $
+                # Go to end of line
+                self.action_cursor_line_end()
+                event.prevent_default()
+                return
+            else:
+                # In command mode, don't allow regular text input
+                event.prevent_default()
+                return
+        
+        # Insert mode - allow normal editing
+        await super()._on_key(event)
 
 
 class CustomDirectoryTree(Static):
@@ -328,6 +481,7 @@ class MarkdownEditor(App):
         Binding("ctrl+shift+s", "save_as", "Save As", priority=True),
         Binding("ctrl+p", "toggle_preview", "Toggle Preview", priority=True),
         Binding("ctrl+f", "format_text", "Format", priority=True),
+        Binding("ctrl+v", "toggle_vim", "Toggle Vim", priority=True),
         Binding("ctrl+q", "quit", "Quit", priority=True),
         Binding("f1", "toggle_file_tree", "Toggle Tree", priority=True),
     ]
@@ -340,13 +494,14 @@ class MarkdownEditor(App):
         self.show_file_tree = True
         self.current_directory = Path.cwd()
         self.editor_content = ""  # Store content when in preview mode
+        self.vim_mode = False
         
     def compose(self) -> ComposeResult:
         yield Header()
         with Horizontal(classes="container"):
             yield CustomDirectoryTree(str(self.current_directory), id="file-tree")
             with Vertical(id="editor-container"):
-                yield TextArea(
+                yield VimTextArea(
                     text="# Welcome to Markdown Editor\n\nStart typing your markdown content here...",
                     language="markdown",
                     id="text-editor",
@@ -364,7 +519,7 @@ class MarkdownEditor(App):
         """Initialize the editor."""
         self.title = "Markdown Editor"
         self.sub_title = "Untitled"
-        self.update_status("Ready - Press F1 to toggle file tree, Ctrl+P to toggle preview, Ctrl+F to format")
+        self.update_status("Ready - Press F1 to toggle file tree, Ctrl+P to toggle preview, Ctrl+V for vim mode")
 
     @on(DirectoryChanged)
     def on_directory_changed(self, event: DirectoryChanged) -> None:
@@ -386,7 +541,11 @@ class MarkdownEditor(App):
     def update_status(self, message: str) -> None:
         """Update the status bar."""
         status_bar = self.query_one("#status-bar", Static)
-        status_bar.update(message)
+        vim_status = ""
+        if self.vim_mode:
+            text_editor = self.query_one("#text-editor", VimTextArea)
+            vim_status = f" [{text_editor.vim_status}]" if text_editor.vim_status else " [VIM]"
+        status_bar.update(f"{message}{vim_status}")
         
     def update_title(self) -> None:
         """Update the window title based on current file."""
@@ -402,6 +561,11 @@ class MarkdownEditor(App):
         if not self.preview_mode:  # Only mark as modified if in edit mode
             self.is_modified = True
             self.update_title()
+            
+        # Update vim mode status display
+        if self.vim_mode:
+            text_editor = self.query_one("#text-editor", VimTextArea)
+            self.update_status("Text changed")
     
     def update_preview(self) -> None:
         """Update the markdown preview."""
@@ -417,7 +581,7 @@ class MarkdownEditor(App):
 
     def toggle_preview_mode(self) -> None:
         """Toggle between edit and preview modes."""
-        text_editor = self.query_one("#text-editor", TextArea)
+        text_editor = self.query_one("#text-editor", VimTextArea)
         preview_container = self.query_one("#preview-container", ScrollableContainer)
         
         if self.preview_mode:
@@ -448,7 +612,7 @@ class MarkdownEditor(App):
         """Open a file in the editor."""
         try:
             content = file_path.read_text(encoding='utf-8')
-            text_editor = self.query_one("#text-editor", TextArea)
+            text_editor = self.query_one("#text-editor", VimTextArea)
             text_editor.text = content
             
             self.current_file = file_path
@@ -465,7 +629,7 @@ class MarkdownEditor(App):
             return False
             
         try:
-            text_editor = self.query_one("#text-editor", TextArea)
+            text_editor = self.query_one("#text-editor", VimTextArea)
             self.current_file.write_text(text_editor.text, encoding='utf-8')
             self.is_modified = False
             self.update_title()
@@ -478,7 +642,7 @@ class MarkdownEditor(App):
     def save_file_as(self, file_path: Path) -> bool:
         """Save the current content to a new file."""
         try:
-            text_editor = self.query_one("#text-editor", TextArea)
+            text_editor = self.query_one("#text-editor", VimTextArea)
             file_path.write_text(text_editor.text, encoding='utf-8')
             self.current_file = file_path
             self.is_modified = False
@@ -496,7 +660,7 @@ class MarkdownEditor(App):
     
     def action_new_file(self) -> None:
         """Create a new file."""
-        text_editor = self.query_one("#text-editor", TextArea)
+        text_editor = self.query_one("#text-editor", VimTextArea)
         text_editor.text = "# New Document\n\n"
         self.current_file = None
         self.is_modified = True
@@ -579,7 +743,7 @@ class MarkdownEditor(App):
         """Show the format menu."""
         def handle_format(format_type: Optional[str]) -> None:
             if format_type:
-                text_editor = self.query_one("#text-editor", TextArea)
+                text_editor = self.query_one("#text-editor", VimTextArea)
                 
                 # Get selected text or current word
                 selection = text_editor.selected_text
