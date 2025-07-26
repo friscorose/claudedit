@@ -18,7 +18,7 @@ from rich.syntax import Syntax
 from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Container, Horizontal, Vertical, ScrollableContainer
 from textual.widgets import (
     Button,
     DirectoryTree,
@@ -336,9 +336,10 @@ class MarkdownEditor(App):
         super().__init__()
         self.current_file: Optional[Path] = None
         self.is_modified = False
-        self.show_preview = False
+        self.preview_mode = False  # Changed from show_preview
         self.show_file_tree = True
         self.current_directory = Path.cwd()
+        self.editor_content = ""  # Store content when in preview mode
         
     def compose(self) -> ComposeResult:
         yield Header()
@@ -351,7 +352,7 @@ class MarkdownEditor(App):
                     id="text-editor",
                     show_line_numbers=True,
                 )
-                yield Container(
+                yield ScrollableContainer(
                     Static("", id="preview-content"),
                     id="preview-container",
                     classes="hidden"
@@ -363,7 +364,7 @@ class MarkdownEditor(App):
         """Initialize the editor."""
         self.title = "Markdown Editor"
         self.sub_title = "Untitled"
-        self.update_status("Ready - Press F1 to toggle file tree, Ctrl+P for preview, Ctrl+F to format")
+        self.update_status("Ready - Press F1 to toggle file tree, Ctrl+P to toggle preview, Ctrl+F to format")
 
     @on(DirectoryChanged)
     def on_directory_changed(self, event: DirectoryChanged) -> None:
@@ -398,11 +399,9 @@ class MarkdownEditor(App):
     @on(TextArea.Changed, "#text-editor")
     def on_text_changed(self, event: TextArea.Changed) -> None:
         """Handle text changes in the editor."""
-        self.is_modified = True
-        self.update_title()
-        
-        if self.show_preview:
-            self.update_preview()
+        if not self.preview_mode:  # Only mark as modified if in edit mode
+            self.is_modified = True
+            self.update_title()
     
     def update_preview(self) -> None:
         """Update the markdown preview."""
@@ -415,6 +414,29 @@ class MarkdownEditor(App):
             preview_content.update(rendered)
         else:
             preview_content.update("Preview will appear here...")
+
+    def toggle_preview_mode(self) -> None:
+        """Toggle between edit and preview modes."""
+        text_editor = self.query_one("#text-editor", TextArea)
+        preview_container = self.query_one("#preview-container", ScrollableContainer)
+        
+        if self.preview_mode:
+            # Switch to edit mode
+            text_editor.remove_class("hidden")
+            preview_container.add_class("hidden")
+            # Restore the editor content
+            text_editor.text = self.editor_content
+            text_editor.focus()
+            self.preview_mode = False
+            self.update_status("Edit mode - Press Ctrl+P to preview")
+        else:
+            # Switch to preview mode
+            self.editor_content = text_editor.text  # Store current content
+            text_editor.add_class("hidden")
+            preview_container.remove_class("hidden")
+            self.update_preview()
+            self.preview_mode = True
+            self.update_status("Preview mode - Press Ctrl+P to edit")
     
     @on(DirectoryTree.FileSelected)
     def on_directory_tree_file_selected(self, event: DirectoryTree.FileSelected) -> None:
@@ -434,9 +456,6 @@ class MarkdownEditor(App):
             self.update_title()
             self.update_status(f"Opened: {file_path}")
             
-            if self.show_preview:
-                self.update_preview()
-                
         except Exception as e:
             self.update_status(f"Error opening file: {e}")
     
@@ -483,9 +502,6 @@ class MarkdownEditor(App):
         self.is_modified = True
         self.update_title()
         self.update_status("New file created")
-        
-        if self.show_preview:
-            self.update_preview()
     
     def action_open_file(self) -> None:
         """Open file dialog (simplified - uses file tree selection)."""
@@ -507,21 +523,8 @@ class MarkdownEditor(App):
         self.push_screen(SaveAsScreen(self.current_file), handle_save_as)
     
     def action_toggle_preview(self) -> None:
-        """Toggle the markdown preview pane."""
-        self.show_preview = not self.show_preview
-        
-        text_editor = self.query_one("#text-editor", TextArea)
-        preview_container = self.query_one("#preview-container", Container)
-        
-        if self.show_preview:
-            preview_container.remove_class("hidden")
-            text_editor.styles.height = "50%"
-            self.update_preview()
-            self.update_status("Preview enabled")
-        else:
-            preview_container.add_class("hidden")
-            text_editor.styles.height = "100%"
-            self.update_status("Preview disabled")
+        """Toggle between edit and preview modes."""
+        self.toggle_preview_mode()
     
     def format_text(self, format_type: str, selected_text: str) -> str:
         """Apply markdown formatting to selected text."""
@@ -605,9 +608,6 @@ class MarkdownEditor(App):
                 self.is_modified = True
                 self.update_title()
                 self.update_status(f"Applied {format_type} formatting")
-                
-                if self.show_preview:
-                    self.update_preview()
         
         self.push_screen(FormatMenuScreen(), handle_format)
 
