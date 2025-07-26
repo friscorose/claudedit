@@ -1,9 +1,22 @@
 [project]
 name = "claudedit"
-version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
-requires-python = ">=3.12"
+version = "0.2.0"
+description = "A full-featured terminal markdown editor"
 dependencies = [
-    "textual>=5.0.1",
+    "textual>=0.41.0",
+    "rich>=13.0.0",
 ]
+
+[project.scripts]
+claudedit = "claudedit.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=7.0",
+    "ruff>=0.1.0",
+]
+
