@@ -9,12 +9,10 @@ Features:
 - Keyboard shortcuts
 """
 
-import os
 from pathlib import Path
 from typing import Optional
 
 from rich.markdown import Markdown
-from rich.syntax import Syntax
 from textual import on, events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -32,20 +30,19 @@ from textual.widgets import (
     Tree,
 )
 from textual.widgets.option_list import Option
-from textual.widgets.tree import TreeNode
 from textual.screen import ModalScreen
 from textual.message import Message
 
 
 class VimTextArea(TextArea):
     """TextArea with vim keybindings support."""
-    
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.vim_mode = False
         self.vim_command_mode = False  # Normal mode vs Insert mode
         self.vim_status = "INSERT"
-        
+
     def enable_vim_mode(self, enabled: bool = True):
         """Enable or disable vim mode."""
         self.vim_mode = enabled
@@ -54,13 +51,13 @@ class VimTextArea(TextArea):
             self.vim_status = "INSERT"
         else:
             self.vim_status = ""
-    
+
     async def _on_key(self, event: events.Key) -> None:
         """Handle vim keybindings."""
         if not self.vim_mode:
             await super()._on_key(event)
             return
-            
+
         # Handle Escape key to toggle between modes
         if event.key == "escape":
             if self.vim_command_mode:
@@ -72,7 +69,7 @@ class VimTextArea(TextArea):
                 self.vim_status = "NORMAL"
             event.prevent_default()
             return
-            
+
         # Command mode (Normal mode) keybindings
         if self.vim_command_mode:
             if event.key == "i":
@@ -185,63 +182,69 @@ class VimTextArea(TextArea):
                 # In command mode, don't allow regular text input
                 event.prevent_default()
                 return
-        
+
         # Insert mode - allow normal editing
         await super()._on_key(event)
 
 
 class CustomDirectoryTree(Static):
     """Custom directory tree widget with parent directory navigation."""
-    
+
     def __init__(self, path: str, **kwargs):
         super().__init__(**kwargs)
         self.current_path = Path(path)
-        
+
     def compose(self) -> ComposeResult:
         yield Tree("Files", id="file-tree-widget")
-        
+
     def on_mount(self) -> None:
         """Initialize the tree with current directory contents."""
         self.refresh_tree()
-        
+
     def refresh_tree(self) -> None:
         """Refresh the tree with current directory contents."""
         tree = self.query_one("#file-tree-widget", Tree)
         tree.clear()
-        
+
         root = tree.root
         root.set_label(f"📁 {self.current_path.name or str(self.current_path)}")
-        
+
         # Add parent directory option if not at root
         if self.current_path.parent != self.current_path:
-            parent_node = root.add("📁 ..", data={"type": "parent", "path": self.current_path.parent})
+            parent_node = root.add(
+                "📁 ..", data={"type": "parent", "path": self.current_path.parent}
+            )
             parent_node.allow_expand = False
-        
+
         # Add directories first
         try:
             directories = sorted([p for p in self.current_path.iterdir() if p.is_dir()])
             for dir_path in directories:
-                dir_node = root.add(f"📁 {dir_path.name}", data={"type": "directory", "path": dir_path})
+                dir_node = root.add(
+                    f"📁 {dir_path.name}", data={"type": "directory", "path": dir_path}
+                )
                 dir_node.allow_expand = False
         except PermissionError:
             pass
-            
+
         # Add files
         try:
             files = sorted([p for p in self.current_path.iterdir() if p.is_file()])
             for file_path in files:
                 icon = "📄"
-                if file_path.suffix.lower() in ['.md', '.markdown']:
+                if file_path.suffix.lower() in [".md", ".markdown"]:
                     icon = "📝"
-                elif file_path.suffix.lower() in ['.txt', '.text']:
+                elif file_path.suffix.lower() in [".txt", ".text"]:
                     icon = "📄"
-                file_node = root.add(f"{icon} {file_path.name}", data={"type": "file", "path": file_path})
+                file_node = root.add(
+                    f"{icon} {file_path.name}", data={"type": "file", "path": file_path}
+                )
                 file_node.allow_expand = False
         except PermissionError:
             pass
-            
+
         root.expand()
-        
+
     def navigate_to(self, path: Path) -> None:
         """Navigate to a different directory."""
         if path.is_dir():
@@ -265,6 +268,7 @@ class CustomDirectoryTree(Static):
 
 class DirectoryChanged(Message):
     """Message sent when directory changes."""
+
     def __init__(self, path: Path):
         super().__init__()
         self.path = path
@@ -272,6 +276,7 @@ class DirectoryChanged(Message):
 
 class FileSelected(Message):
     """Message sent when a file is selected."""
+
     def __init__(self, path: Path):
         super().__init__()
         self.path = path
@@ -279,7 +284,7 @@ class FileSelected(Message):
 
 class FormatMenuScreen(ModalScreen):
     """Modal screen for markdown formatting options."""
-    
+
     def compose(self) -> ComposeResult:
         with Container(id="format-menu-dialog"):
             yield Label("Format Selected Text", id="format-menu-title")
@@ -303,7 +308,7 @@ class FormatMenuScreen(ModalScreen):
                 Option("Image", id="image"),
                 Option("Table", id="table"),
                 Option("Horizontal Rule", id="hr"),
-                id="format-options"
+                id="format-options",
             )
             with Horizontal(id="format-menu-buttons"):
                 yield Button("Apply", variant="primary", id="apply-format-button")
@@ -313,7 +318,9 @@ class FormatMenuScreen(ModalScreen):
     def apply_format(self) -> None:
         format_options = self.query_one("#format-options", OptionList)
         if format_options.highlighted is not None:
-            selected_option = format_options.get_option_at_index(format_options.highlighted)
+            selected_option = format_options.get_option_at_index(
+                format_options.highlighted
+            )
             self.dismiss(selected_option.id)
         else:
             self.dismiss(None)
@@ -329,18 +336,18 @@ class FormatMenuScreen(ModalScreen):
 
 class SaveAsScreen(ModalScreen):
     """Modal screen for Save As dialog."""
-    
+
     def __init__(self, current_path: Optional[Path] = None):
         super().__init__()
         self.current_path = current_path
-        
+
     def compose(self) -> ComposeResult:
         with Container(id="save-as-dialog"):
             yield Label("Save As", id="save-as-title")
             yield Input(
                 placeholder="Enter filename...",
                 value=str(self.current_path) if self.current_path else "",
-                id="filename-input"
+                id="filename-input",
             )
             with Horizontal(id="save-as-buttons"):
                 yield Button("Save", variant="primary", id="save-button")
@@ -366,7 +373,7 @@ class SaveAsScreen(ModalScreen):
 
 class MarkdownEditor(App):
     """A markdown editor with file tree and live preview."""
-    
+
     CSS = """
     #format-menu-dialog {
         width: 50;
@@ -473,7 +480,7 @@ class MarkdownEditor(App):
         display: none;
     }
     """
-    
+
     BINDINGS = [
         Binding("ctrl+n", "new_file", "New", priority=True),
         Binding("ctrl+o", "open_file", "Open", priority=True),
@@ -485,7 +492,7 @@ class MarkdownEditor(App):
         Binding("ctrl+q", "quit", "Quit", priority=True),
         Binding("f1", "toggle_file_tree", "Toggle Tree", priority=True),
     ]
-    
+
     def __init__(self):
         super().__init__()
         self.current_file: Optional[Path] = None
@@ -495,7 +502,7 @@ class MarkdownEditor(App):
         self.current_directory = Path.cwd()
         self.editor_content = ""  # Store content when in preview mode
         self.vim_mode = False
-        
+
     def compose(self) -> ComposeResult:
         yield Header()
         with Horizontal(classes="container"):
@@ -510,16 +517,18 @@ class MarkdownEditor(App):
                 yield ScrollableContainer(
                     Static("", id="preview-content"),
                     id="preview-container",
-                    classes="hidden"
+                    classes="hidden",
                 )
         yield Static("Ready", id="status-bar")
         yield Footer()
-    
+
     def on_mount(self) -> None:
         """Initialize the editor."""
         self.title = "Markdown Editor"
         self.sub_title = "Untitled"
-        self.update_status("Ready - Press F1 to toggle file tree, Ctrl+P to toggle preview, Ctrl+V for vim mode")
+        self.update_status(
+            "Ready - Press F1 to toggle file tree, Ctrl+P to toggle preview, Ctrl+V for vim mode"
+        )
 
     @on(DirectoryChanged)
     def on_directory_changed(self, event: DirectoryChanged) -> None:
@@ -531,22 +540,24 @@ class MarkdownEditor(App):
     def on_file_selected(self, event: FileSelected) -> None:
         """Handle file selection from the custom directory tree."""
         file_path = event.path
-        
+
         # Only open markdown files and text files
-        if file_path.suffix.lower() in ['.md', '.markdown', '.txt', '.text']:
+        if file_path.suffix.lower() in [".md", ".markdown", ".txt", ".text"]:
             self.open_file_path(file_path)
         else:
             self.update_status(f"Cannot open {file_path.suffix} files")
-        
+
     def update_status(self, message: str) -> None:
         """Update the status bar."""
         status_bar = self.query_one("#status-bar", Static)
         vim_status = ""
         if self.vim_mode:
             text_editor = self.query_one("#text-editor", VimTextArea)
-            vim_status = f" [{text_editor.vim_status}]" if text_editor.vim_status else " [VIM]"
+            vim_status = (
+                f" [{text_editor.vim_status}]" if text_editor.vim_status else " [VIM]"
+            )
         status_bar.update(f"{message}{vim_status}")
-        
+
     def update_title(self) -> None:
         """Update the window title based on current file."""
         if self.current_file:
@@ -554,24 +565,24 @@ class MarkdownEditor(App):
             self.sub_title = f"{'*' if self.is_modified else ''}{filename}"
         else:
             self.sub_title = f"{'*' if self.is_modified else ''}Untitled"
-    
+
     @on(TextArea.Changed, "#text-editor")
     def on_text_changed(self, event: TextArea.Changed) -> None:
         """Handle text changes in the editor."""
         if not self.preview_mode:  # Only mark as modified if in edit mode
             self.is_modified = True
             self.update_title()
-            
+
         # Update vim mode status display
         if self.vim_mode:
             text_editor = self.query_one("#text-editor", VimTextArea)
             self.update_status("Text changed")
-    
+
     def update_preview(self) -> None:
         """Update the markdown preview."""
         text_editor = self.query_one("#text-editor", TextArea)
         preview_content = self.query_one("#preview-content", Static)
-        
+
         markdown_text = text_editor.text
         if markdown_text.strip():
             rendered = Markdown(markdown_text)
@@ -583,7 +594,7 @@ class MarkdownEditor(App):
         """Toggle between edit and preview modes."""
         text_editor = self.query_one("#text-editor", VimTextArea)
         preview_container = self.query_one("#preview-container", ScrollableContainer)
-        
+
         if self.preview_mode:
             # Switch to edit mode
             text_editor.remove_class("hidden")
@@ -601,36 +612,38 @@ class MarkdownEditor(App):
             self.update_preview()
             self.preview_mode = True
             self.update_status("Preview mode - Press Ctrl+P to edit")
-    
+
     @on(DirectoryTree.FileSelected)
-    def on_directory_tree_file_selected(self, event: DirectoryTree.FileSelected) -> None:
+    def on_directory_tree_file_selected(
+        self, event: DirectoryTree.FileSelected
+    ) -> None:
         """Handle file selection from the standard directory tree (fallback)."""
         # This is kept for compatibility but won't be used with CustomDirectoryTree
         pass
-    
+
     def open_file_path(self, file_path: Path) -> None:
         """Open a file in the editor."""
         try:
-            content = file_path.read_text(encoding='utf-8')
+            content = file_path.read_text(encoding="utf-8")
             text_editor = self.query_one("#text-editor", VimTextArea)
             text_editor.text = content
-            
+
             self.current_file = file_path
             self.is_modified = False
             self.update_title()
             self.update_status(f"Opened: {file_path}")
-            
+
         except Exception as e:
             self.update_status(f"Error opening file: {e}")
-    
+
     def save_current_file(self) -> bool:
         """Save the current file. Returns True if saved successfully."""
         if not self.current_file:
             return False
-            
+
         try:
             text_editor = self.query_one("#text-editor", VimTextArea)
-            self.current_file.write_text(text_editor.text, encoding='utf-8')
+            self.current_file.write_text(text_editor.text, encoding="utf-8")
             self.is_modified = False
             self.update_title()
             self.update_status(f"Saved: {self.current_file}")
@@ -638,26 +651,26 @@ class MarkdownEditor(App):
         except Exception as e:
             self.update_status(f"Error saving file: {e}")
             return False
-    
+
     def save_file_as(self, file_path: Path) -> bool:
         """Save the current content to a new file."""
         try:
             text_editor = self.query_one("#text-editor", VimTextArea)
-            file_path.write_text(text_editor.text, encoding='utf-8')
+            file_path.write_text(text_editor.text, encoding="utf-8")
             self.current_file = file_path
             self.is_modified = False
             self.update_title()
             self.update_status(f"Saved as: {file_path}")
-            
+
             # Refresh the directory tree
             file_tree = self.query_one("#file-tree", CustomDirectoryTree)
             file_tree.refresh_tree()
-            
+
             return True
         except Exception as e:
             self.update_status(f"Error saving file: {e}")
             return False
-    
+
     def action_new_file(self) -> None:
         """Create a new file."""
         text_editor = self.query_one("#text-editor", VimTextArea)
@@ -666,35 +679,36 @@ class MarkdownEditor(App):
         self.is_modified = True
         self.update_title()
         self.update_status("New file created")
-    
+
     def action_open_file(self) -> None:
         """Open file dialog (simplified - uses file tree selection)."""
         self.update_status("Select a file from the file tree to open")
-    
+
     def action_save_file(self) -> None:
         """Save the current file."""
         if self.current_file:
             self.save_current_file()
         else:
             self.action_save_as()
-    
+
     def action_save_as(self) -> None:
         """Show save as dialog."""
+
         def handle_save_as(result: Optional[Path]) -> None:
             if result:
                 self.save_file_as(result)
-        
+
         self.push_screen(SaveAsScreen(self.current_file), handle_save_as)
-    
+
     def action_toggle_preview(self) -> None:
         """Toggle between edit and preview modes."""
         self.toggle_preview_mode()
-    
+
     def format_text(self, format_type: str, selected_text: str) -> str:
         """Apply markdown formatting to selected text."""
         if not selected_text:
             selected_text = "text"
-            
+
         if format_type == "h1":
             return f"# {selected_text}"
         elif format_type == "h2":
@@ -720,14 +734,14 @@ class MarkdownEditor(App):
         elif format_type == "code_block":
             return f"```\n{selected_text}\n```"
         elif format_type == "blockquote":
-            lines = selected_text.split('\n')
-            return '\n'.join(f"> {line}" for line in lines)
+            lines = selected_text.split("\n")
+            return "\n".join(f"> {line}" for line in lines)
         elif format_type == "ul":
-            lines = selected_text.split('\n')
-            return '\n'.join(f"- {line}" for line in lines)
+            lines = selected_text.split("\n")
+            return "\n".join(f"- {line}" for line in lines)
         elif format_type == "ol":
-            lines = selected_text.split('\n')
-            return '\n'.join(f"{i+1}. {line}" for i, line in enumerate(lines))
+            lines = selected_text.split("\n")
+            return "\n".join(f"{i + 1}. {line}" for i, line in enumerate(lines))
         elif format_type == "link":
             return f"[{selected_text}](url)"
         elif format_type == "image":
@@ -741,10 +755,11 @@ class MarkdownEditor(App):
 
     def action_format_text(self) -> None:
         """Show the format menu."""
+
         def handle_format(format_type: Optional[str]) -> None:
             if format_type:
                 text_editor = self.query_one("#text-editor", VimTextArea)
-                
+
                 # Get selected text or current word
                 selection = text_editor.selected_text
                 if not selection:
@@ -754,25 +769,29 @@ class MarkdownEditor(App):
                     # Simple word extraction (could be improved)
                     start = cursor_pos
                     end = cursor_pos
-                    while start > 0 and text[start-1].isalnum():
+                    while start > 0 and text[start - 1].isalnum():
                         start -= 1
                     while end < len(text) and text[end].isalnum():
                         end += 1
                     selection = text[start:end] if start < end else ""
-                
+
                 formatted_text = self.format_text(format_type, selection)
-                
+
                 if text_editor.selected_text:
                     # Replace selected text
-                    text_editor.replace(formatted_text, text_editor.selection.start, text_editor.selection.end)
+                    text_editor.replace(
+                        formatted_text,
+                        text_editor.selection.start,
+                        text_editor.selection.end,
+                    )
                 else:
                     # Insert at cursor position
                     text_editor.insert(formatted_text)
-                
+
                 self.is_modified = True
                 self.update_title()
                 self.update_status(f"Applied {format_type} formatting")
-        
+
         self.push_screen(FormatMenuScreen(), handle_format)
 
     def action_go_up_directory(self) -> None:
@@ -786,18 +805,19 @@ class MarkdownEditor(App):
             self.update_status(f"Navigated to: {self.current_directory}")
         else:
             self.update_status("Already at root directory")
+
     def action_toggle_file_tree(self) -> None:
         """Toggle the file tree visibility."""
         self.show_file_tree = not self.show_file_tree
         file_tree = self.query_one("#file-tree", CustomDirectoryTree)
-        
+
         if self.show_file_tree:
             file_tree.remove_class("hidden")
             self.update_status("File tree shown")
         else:
             file_tree.add_class("hidden")
             self.update_status("File tree hidden")
-    
+
     def action_quit(self) -> None:
         """Quit the application."""
         if self.is_modified:
