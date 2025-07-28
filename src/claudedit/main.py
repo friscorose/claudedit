@@ -69,10 +69,7 @@ class VimTextArea(TextArea):
 
         # Handle Escape key to toggle between modes
         if event.key == "escape":
-            if self.vim_command_mode:
-                # Already in command mode, stay in command mode
-                pass
-            else:
+            if not self.vim_command_mode:
                 # Switch to command mode
                 self.vim_command_mode = True
                 self._update_vim_status("NORMAL")
@@ -91,14 +88,19 @@ class VimTextArea(TextArea):
                 # Enter insert mode after cursor
                 self.vim_command_mode = False
                 self._update_vim_status("INSERT")
-                if self.cursor_position < len(self.text):
-                    self.cursor_position += 1
+                # Move cursor right if not at end of line
+                cursor_row, cursor_col = self.cursor_location
+                current_line = self.get_line(cursor_row)
+                if cursor_col < len(current_line.plain):
+                    self.cursor_location = (cursor_row, cursor_col + 1)
                 event.prevent_default()
                 return
             elif event.key == "o":
                 # Open new line below and enter insert mode
-                cursor_line, _ = self.cursor_position
-                self.cursor_position = (cursor_line, len(self.get_line(cursor_line)))
+                cursor_row, cursor_col = self.cursor_location
+                current_line = self.get_line(cursor_row)
+                # Move to end of current line and insert newline
+                self.cursor_location = (cursor_row, len(current_line.plain))
                 self.insert("\n")
                 self.vim_command_mode = False
                 self._update_vim_status("INSERT")
@@ -106,24 +108,36 @@ class VimTextArea(TextArea):
                 return
             elif event.key == "shift+o":
                 # Open new line above and enter insert mode
-                cursor_line, _ = self.cursor_position
-                self.cursor_position = (cursor_line, 0)
+                cursor_row, cursor_col = self.cursor_location
+                # Move to beginning of current line and insert newline
+                self.cursor_location = (cursor_row, 0)
                 self.insert("\n")
-                self.cursor_position = (cursor_line, 0)
+                # Move cursor back up to the new line
+                self.cursor_location = (cursor_row, 0)
                 self.vim_command_mode = False
                 self._update_vim_status("INSERT")
                 event.prevent_default()
                 return
             elif event.key == "h":
                 # Move left
-                if self.cursor_position > 0:
-                    self.cursor_position -= 1
+                cursor_row, cursor_col = self.cursor_location
+                if cursor_col > 0:
+                    self.cursor_location = (cursor_row, cursor_col - 1)
+                elif cursor_row > 0:
+                    # Move to end of previous line
+                    prev_line = self.get_line(cursor_row - 1)
+                    self.cursor_location = (cursor_row - 1, len(prev_line.plain))
                 event.prevent_default()
                 return
             elif event.key == "l":
                 # Move right
-                if self.cursor_position < len(self.text):
-                    self.cursor_position += 1
+                cursor_row, cursor_col = self.cursor_location
+                current_line = self.get_line(cursor_row)
+                if cursor_col < len(current_line.plain):
+                    self.cursor_location = (cursor_row, cursor_col + 1)
+                elif cursor_row < self.document.line_count - 1:
+                    # Move to beginning of next line
+                    self.cursor_location = (cursor_row + 1, 0)
                 event.prevent_default()
                 return
             elif event.key == "j":
@@ -148,12 +162,16 @@ class VimTextArea(TextArea):
                 return
             elif event.key == "x":
                 # Delete character under cursor
-                if self.cursor_position < len(self.text):
-                    self.delete(1)
+                cursor_row, cursor_col = self.cursor_location
+                current_line = self.get_line(cursor_row)
+                if cursor_col < len(current_line.plain):
+                    # Delete character at cursor
+                    end_location = (cursor_row, cursor_col + 1)
+                    self.delete((cursor_row, cursor_col), end_location)
                 event.prevent_default()
                 return
             elif event.key == "d":
-                # Start delete command (simplified - just delete current line)
+                # Delete current line (simplified dd command)
                 self.action_delete_line()
                 event.prevent_default()
                 return
@@ -169,12 +187,14 @@ class VimTextArea(TextArea):
                 return
             elif event.key == "shift+g":
                 # Go to end of file
-                self.cursor_position = len(self.text)
+                last_line = self.document.line_count - 1
+                last_line_text = self.get_line(last_line)
+                self.cursor_location = (last_line, len(last_line_text.plain))
                 event.prevent_default()
                 return
             elif event.key == "g":
                 # Go to beginning of file (simplified gg)
-                self.cursor_position = 0
+                self.cursor_location = (0, 0)
                 event.prevent_default()
                 return
             elif event.key == "0":
@@ -194,7 +214,6 @@ class VimTextArea(TextArea):
 
         # Insert mode - allow normal editing
         await super()._on_key(event)
-
 
 class VimModeChanged(Message):
     """Message sent when vim mode changes."""
