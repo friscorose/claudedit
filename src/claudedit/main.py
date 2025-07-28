@@ -7,6 +7,7 @@ Features:
 - Live markdown preview
 - File operations (new, open, save, save as)
 - Keyboard shortcuts
+- Vim mode with proper status line display
 """
 
 from pathlib import Path
@@ -49,8 +50,16 @@ class VimTextArea(TextArea):
         if enabled:
             self.vim_command_mode = False  # Start in insert mode
             self.vim_status = "INSERT"
+            # Post message to update status
+            self.post_message(VimModeChanged(self.vim_status))
         else:
             self.vim_status = ""
+            self.post_message(VimModeChanged(self.vim_status))
+
+    def _update_vim_status(self, new_status: str):
+        """Update vim status and notify parent."""
+        self.vim_status = new_status
+        self.post_message(VimModeChanged(new_status))
 
     async def _on_key(self, event: events.Key) -> None:
         """Handle vim keybindings."""
@@ -66,7 +75,7 @@ class VimTextArea(TextArea):
             else:
                 # Switch to command mode
                 self.vim_command_mode = True
-                self.vim_status = "NORMAL"
+                self._update_vim_status("NORMAL")
             event.prevent_default()
             return
 
@@ -75,13 +84,13 @@ class VimTextArea(TextArea):
             if event.key == "i":
                 # Enter insert mode
                 self.vim_command_mode = False
-                self.vim_status = "INSERT"
+                self._update_vim_status("INSERT")
                 event.prevent_default()
                 return
             elif event.key == "a":
                 # Enter insert mode after cursor
                 self.vim_command_mode = False
-                self.vim_status = "INSERT"
+                self._update_vim_status("INSERT")
                 if self.cursor_position < len(self.text):
                     self.cursor_position += 1
                 event.prevent_default()
@@ -92,7 +101,7 @@ class VimTextArea(TextArea):
                 self.cursor_position = (cursor_line, len(self.get_line(cursor_line)))
                 self.insert("\n")
                 self.vim_command_mode = False
-                self.vim_status = "INSERT"
+                self._update_vim_status("INSERT")
                 event.prevent_default()
                 return
             elif event.key == "shift+o":
@@ -102,7 +111,7 @@ class VimTextArea(TextArea):
                 self.insert("\n")
                 self.cursor_position = (cursor_line, 0)
                 self.vim_command_mode = False
-                self.vim_status = "INSERT"
+                self._update_vim_status("INSERT")
                 event.prevent_default()
                 return
             elif event.key == "h":
@@ -185,6 +194,14 @@ class VimTextArea(TextArea):
 
         # Insert mode - allow normal editing
         await super()._on_key(event)
+
+
+class VimModeChanged(Message):
+    """Message sent when vim mode changes."""
+    
+    def __init__(self, status: str):
+        super().__init__()
+        self.status = status
 
 
 class CustomDirectoryTree(Static):
@@ -473,7 +490,9 @@ class MarkdownEditor(App):
         height: 1;
         background: $primary;
         color: $text;
-        content-align: center middle;
+        content-align-horizontal: left;
+        content-align-vertical: middle;
+        padding: 0 1;
     }
     
     .hidden {
@@ -502,6 +521,7 @@ class MarkdownEditor(App):
         self.current_directory = Path.cwd()
         self.editor_content = ""  # Store content when in preview mode
         self.vim_mode = False
+        self.vim_status = ""  # Track current vim status
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -530,6 +550,23 @@ class MarkdownEditor(App):
             "Ready - Press F1 to toggle file tree, Ctrl+P to toggle preview, Ctrl+V for vim mode"
         )
 
+    @on(VimModeChanged)
+    def on_vim_mode_changed(self, event: VimModeChanged) -> None:
+        """Handle vim mode status changes."""
+        self.vim_status = event.status
+        # Update status bar to reflect vim mode change
+        if self.vim_mode:
+            if self.vim_status:
+                current_status = self.query_one("#status-bar", Static).renderable
+                if isinstance(current_status, str):
+                    base_message = current_status.split(" [")[0]  # Remove existing vim status
+                    self.update_status(base_message)
+            else:
+                # Vim disabled, update without vim status
+                self.update_status("Vim mode disabled")
+        else:
+            self.update_status("Ready")
+
     @on(DirectoryChanged)
     def on_directory_changed(self, event: DirectoryChanged) -> None:
         """Handle directory navigation."""
@@ -548,15 +585,17 @@ class MarkdownEditor(App):
             self.update_status(f"Cannot open {file_path.suffix} files")
 
     def update_status(self, message: str) -> None:
-        """Update the status bar."""
+        """Update the status bar with vim mode information."""
         status_bar = self.query_one("#status-bar", Static)
-        vim_status = ""
-        if self.vim_mode:
-            text_editor = self.query_one("#text-editor", VimTextArea)
-            vim_status = (
-                f" [{text_editor.vim_status}]" if text_editor.vim_status else " [VIM]"
-            )
-        status_bar.update(f"{message}{vim_status}")
+        
+        # Build status message with vim mode indicator
+        status_text = message
+        if self.vim_mode and self.vim_status:
+            status_text += f" [{self.vim_status}]"
+        elif self.vim_mode:
+            status_text += " [VIM]"
+        
+        status_bar.update(status_text)
 
     def update_title(self) -> None:
         """Update the window title based on current file."""
@@ -573,9 +612,10 @@ class MarkdownEditor(App):
             self.is_modified = True
             self.update_title()
 
-        # Update vim mode status display
+        # Update status to reflect text change while preserving vim status
         if self.vim_mode:
-            text_editor = self.query_one("#text-editor", VimTextArea)
+            self.update_status("Text changed")
+        else:
             self.update_status("Text changed")
 
     def update_preview(self) -> None:
@@ -817,6 +857,18 @@ class MarkdownEditor(App):
         else:
             file_tree.add_class("hidden")
             self.update_status("File tree hidden")
+
+    def action_toggle_vim(self) -> None:
+        """Toggle vim mode."""
+        self.vim_mode = not self.vim_mode
+        text_editor = self.query_one("#text-editor", VimTextArea)
+        text_editor.enable_vim_mode(self.vim_mode)
+        
+        if self.vim_mode:
+            self.update_status("Vim mode enabled - Press Esc for NORMAL mode, i for INSERT mode")
+        else:
+            self.vim_status = ""
+            self.update_status("Vim mode disabled")
 
     def action_quit(self) -> None:
         """Quit the application."""
