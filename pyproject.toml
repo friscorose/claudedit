@@ -1,5 +1,5 @@
 [project]
-name = "claudedit"
+name = "vimdown"
 version = "0.2.0"
 description = "A full-featured terminal markdown editor"
 dependencies = [
@@ -8,7 +8,7 @@ dependencies = [
 ]
 
 [project.scripts]
-claudedit = "claudedit.main:main"
+vimdown = "vimdown.main:main"
 
 [build-system]
 requires = ["hatchling"]

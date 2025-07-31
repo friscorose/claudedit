@@ -1,31 +1,31 @@
-# Markdown Editor User Manual
+# The vimdown Markdown Editor User Manual
 
-A full-featured terminal-based markdown editor built with Textual, featuring file management, live preview, vim keybindings, and comprehensive formatting tools.
+A full-featured terminal-based markdown editor built with Textual, featuring file management, live preview, comprehensive vim keybindings, and visual mode markdown formatting.
 
 ## Installation & Setup
 
 ### Option 1: Direct Installation with uvx (Recommended)
 ```bash
 # Install and run directly without cloning
-uvx --from git+https://github.com/friscorose/claudedit.git claudedit
+uvx --from git+https://github.com/friscorose/vimdown.git vimdown
 ```
 
 ### Option 2: Development Setup with uv
 ```bash
 # Clone repository and set up development environment
-git clone https://github.com/friscorose/claudedit.git
-cd claudedit
+git clone https://github.com/friscorose/vimdown.git
+cd vimdown
 uv sync
-uv run claudedit
+uv run vimdown
 ```
 
 ### Option 3: Global Installation
 ```bash
 # Install globally for system-wide access
-git clone https://github.com/friscorose/claudedit.git
-cd claudedit
+git clone https://github.com/friscorose/vimdown.git
+cd vimdown
 uv tool install .
-claudedit  # Now available as a command
+vimdown  # Now available as a command
 ```
 
 ### Dependencies
@@ -39,7 +39,7 @@ The editor consists of four main areas:
 - **Header**: Application title and current file name (shows `*` for unsaved changes)
 - **File Tree**: Directory navigation with custom tree widget (left panel)
 - **Editor/Preview**: Main editing area with toggle between edit and preview modes
-- **Status Bar**: Current status, vim mode indicator, and context messages
+- **Status Bar**: Current vim mode indicator with color coding in editor border
 - **Footer**: Available keyboard shortcuts
 
 ## File Operations
@@ -47,87 +47,34 @@ The editor consists of four main areas:
 ### Basic File Management
 | Shortcut | Action | Description |
 |----------|--------|-------------|
-| `Ctrl+N` | New File | Create a new markdown document with default content |
+| `Ctrl+N` | New File | Create a new markdown document and enter INSERT mode |
 | `Ctrl+S` | Save | Save current file (prompts Save As if no filename) |
 | `Ctrl+Shift+S` | Save As | Save with new filename via modal dialog |
 | `Ctrl+O` | Open | Shows instruction to use file tree (no file dialog) |
-| `Ctrl+Q` | Quit | Exit application (warns about unsaved changes) |
+| `Ctrl+Q` | Quit | Exit application |
 
 ### File Tree Navigation
 - **Click files**: Open `.md`, `.markdown`, `.txt`, `.text` files directly
 - **Click directories**: Navigate into folders
 - **Click ".."**: Navigate to parent directory (when not at filesystem root)
 - **Icons**: 📁 directories, 📝 markdown files, 📄 text files
-- **Toggle**: Press `F1` to show/hide entire file tree panel
+- **Toggle**: Press `Ctrl+T` to show/hide entire file tree panel
 - **Auto-refresh**: Tree updates automatically after save operations
 
-## Editing Features
+## Vim Mode System
 
-### Preview Mode Toggle
-| Shortcut | Action | Description |
-|----------|--------|-------------|
-| `Ctrl+P` | Toggle Preview | Switch between edit and preview modes |
+### Vim Modes (Always Active)
+The editor operates in one of three vim modes at all times:
 
-**Edit Mode**: 
-- Syntax-highlighted markdown editing with line numbers
-- Full text editing capabilities
-- File modification tracking
+- **INSERT**: Normal text editing (green indicator) - Default startup mode
+- **NORMAL**: Command mode for navigation and operations (blue indicator)
+- **VISUAL**: Text selection with markdown formatting (yellow indicator)
 
-**Preview Mode**: 
-- Rendered markdown view in the same space as editor
-- Rich markdown rendering with proper formatting
-- Replaces editor view completely (not side-by-side)
-
-### Text Formatting Menu
-Press `Ctrl+F` to open the formatting menu with these options:
-
-#### Headings
-- **Heading 1-6**: Converts text to `# ## ### #### ##### ######` format
-
-#### Text Styling  
-- **Bold**: Wraps text in `**text**`
-- **Italic**: Wraps text in `*text*`
-- **Bold Italic**: Wraps text in `***text***`
-- **Strikethrough**: Wraps text in `~~text~~`
-
-#### Code Formatting
-- **Inline Code**: Wraps text in `` `code` ``
-- **Code Block**: Creates fenced code block:
-  ```
-  ```
-  code block
-  ```
-  ```
-
-#### Lists and Structure
-- **Unordered List**: Converts lines to `- item` format
-- **Ordered List**: Converts lines to `1. item` format (auto-numbered)
-- **Blockquote**: Prefixes lines with `> quoted text`
-
-#### Links and Media
-- **Link**: Creates `[text](url)` format
-- **Image**: Creates `![alt text](image_url)` format
-- **Horizontal Rule**: Inserts `---`
-
-#### Tables
-- **Table**: Creates basic table structure with headers and sample data
-
-### Formatting Behavior
-- **Selected text**: Applies formatting to selection
-- **No selection**: Uses current word under cursor or placeholder text
-- **Multi-line selections**: Processes each line individually for list/quote formats
-
-## Vim Keybindings
-
-### Toggle Vim Mode
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+V` | Enable/disable vim keybindings |
-
-### Vim Modes
-- **INSERT**: Normal text editing (default when vim enabled)
-- **NORMAL**: Command mode for navigation and operations
-- **Status Display**: Current mode shown in status bar as `[INSERT]` or `[NORMAL]`
+### Mode Display
+Current mode is shown in the editor's border subtitle with color coding:
+- `[INSERT]` in green
+- `[NORMAL]` in blue  
+- `[VISUAL]` in yellow
 
 ### Mode Switching
 | Key | Action | Mode Change |
@@ -135,10 +82,14 @@ Press `Ctrl+F` to open the formatting menu with these options:
 | `Esc` | Switch to NORMAL mode | Any → NORMAL |
 | `i` | Enter INSERT mode at cursor | NORMAL → INSERT |
 | `a` | Enter INSERT mode after cursor | NORMAL → INSERT |
+| `A` | Enter INSERT mode at end of line | NORMAL → INSERT |
+| `I` | Enter INSERT mode at beginning of line | NORMAL → INSERT |
 | `o` | New line below + INSERT mode | NORMAL → INSERT |
 | `O` | New line above + INSERT mode | NORMAL → INSERT |
+| `v` | Enter VISUAL mode with selection | NORMAL → VISUAL |
+| **Text Selection** | Auto-enter VISUAL mode | Any → VISUAL |
 
-### Navigation (NORMAL Mode Only)
+### Navigation (NORMAL Mode)
 | Key | Action |
 |-----|--------|
 | `h` | Move cursor left |
@@ -149,16 +100,103 @@ Press `Ctrl+F` to open the formatting menu with these options:
 | `b` | Move to previous word |
 | `0` | Move to beginning of line |
 | `$` | Move to end of line |
-| `g` | Go to beginning of file |
+| `g` | Go to beginning of file (simplified gg) |
 | `G` | Go to end of file |
 
-### Editing (NORMAL Mode Only)
+### Editing (NORMAL Mode)
 | Key | Action |
 |-----|--------|
 | `x` | Delete character under cursor |
-| `d` | Delete current line |
+| `d` | Delete current line (simplified dd) |
 | `u` | Undo last change |
 | `Ctrl+R` | Redo last undone change |
+
+## Visual Mode Markdown Formatting
+
+### Automatic Visual Mode
+- **Mouse Selection**: Selecting text automatically enters VISUAL mode
+- **Keyboard Selection**: Use `v` in NORMAL mode then move cursor to select
+- **Selection Extension**: Movement keys extend selection in VISUAL mode
+
+### Visual Mode Formatting Keys
+When text is selected in VISUAL mode, use these intuitive keys for instant markdown formatting:
+
+#### Text Styling
+| Key | Result | Markdown |
+|-----|--------|----------|
+| `b` | **Bold text** | `**text**` |
+| `i` | *Italic text* | `*text*` |
+| `s` | ~~Strikethrough~~ | `~~text~~` |
+
+#### Code Formatting
+| Key | Result | Markdown |
+|-----|--------|----------|
+| `c` | `Inline code` | `` `text` `` |
+| `C` | Code block | ``` fenced block ``` |
+
+#### Headers
+| Key | Result | Markdown |
+|-----|--------|----------|
+| `1` | # Header 1 | `# text` |
+| `2` | ## Header 2 | `## text` |
+| `3` | ### Header 3 | `### text` |
+| `4` | #### Header 4 | `#### text` |
+| `5` | ##### Header 5 | `##### text` |
+| `6` | ###### Header 6 | `###### text` |
+
+#### Lists and Structure
+| Key | Result | Markdown |
+|-----|--------|----------|
+| `l` | - List item | `- text` |
+| `L` | 1. Ordered list | `1. text` |
+| `q` | > Blockquote | `> text` |
+
+#### Links and Special
+| Key | Result | Markdown |
+|-----|--------|----------|
+| `u` | [Link](url) | `[text](url)` |
+| `r` | [Reference][ref] | `[text][ref]` |
+| `t` | \| Table cell \| | `| text |` |
+
+### Visual Mode Behavior
+- **Instant formatting**: Key press immediately applies formatting and returns to NORMAL mode
+- **Selection preservation**: Original text is replaced with formatted version
+- **Error handling**: Invalid keys exit VISUAL mode without changes
+- **Movement keys**: `h`, `j`, `k`, `l`, `w`, `b`, `0`, `$` extend selection
+
+## Preview Mode
+
+### Preview Toggle
+| Shortcut | Action | Description |
+|----------|--------|-------------|
+| `Ctrl+P` | Toggle Preview | Switch between edit and preview modes |
+
+**Edit Mode**: 
+- Syntax-highlighted markdown editing with vim modes
+- Line numbers and full text editing capabilities
+- File modification tracking
+
+**Preview Mode**: 
+- Rendered markdown view in the same space as editor
+- Rich markdown rendering with proper formatting
+- Replaces editor view completely (not side-by-side)
+
+## Legacy Format Menu
+
+### Text Formatting Menu (Alternative to Visual Mode)
+Press `Ctrl+F` to open the formatting menu with these options:
+
+#### Available Options
+- **Heading 1-6**: Converts text to `# ## ### #### ##### ######` format
+- **Bold/Italic/Strikethrough**: Text styling options
+- **Code/Code Block**: Inline and block code formatting
+- **Lists**: Unordered and ordered list creation
+- **Blockquote**: Quote formatting
+- **Links/Images**: Link and image insertion
+- **Table**: Basic table structure creation
+- **Horizontal Rule**: Inserts `---`
+
+**Note**: Visual mode formatting (select text + key) is faster and more intuitive than the format menu.
 
 ## Complete Keyboard Reference
 
@@ -170,17 +208,15 @@ Press `Ctrl+F` to open the formatting menu with these options:
 | `Ctrl+S` | Save file |
 | `Ctrl+Shift+S` | Save as |
 | `Ctrl+P` | Toggle preview mode |
-| `Ctrl+F` | Format menu |
-| `Ctrl+V` | Toggle vim mode |
+| `Ctrl+F` | Format menu (legacy) |
 | `Ctrl+Q` | Quit application |
-| `F1` | Toggle file tree visibility |
+| `Ctrl+T` | Toggle file tree visibility |
 
-### Status Bar Information
-The status bar displays:
-- **Operation status**: Current action or instruction
-- **Vim mode**: `[INSERT]` or `[NORMAL]` when vim mode is enabled
-- **File status**: Navigation, save confirmations, error messages
-- **Context help**: Helpful tips and current mode information
+### Vim Mode Indicators
+The editor border displays current mode with color coding:
+- **INSERT mode**: `[INSERT]` in green - ready for text input
+- **NORMAL mode**: `[NORMAL]` in blue - ready for navigation/commands  
+- **VISUAL mode**: `[VISUAL]` in yellow - text selected for formatting
 
 ### Supported File Types
 **Readable formats**:
@@ -189,7 +225,7 @@ The status bar displays:
 - `.txt` - Plain text files
 - `.text` - Text files
 
-**File tree behavior**: Only supported file types can be opened; others show error message.
+**File tree behavior**: Only supported file types can be opened.
 
 ## Workflow Guide
 
@@ -198,165 +234,104 @@ The status bar displays:
 #### Quick Start (uvx)
 ```bash
 # Run directly without installation
-uvx --from git+https://github.com/friscorose/claudedit.git claudedit
+uvx --from git+https://github.com/friscorose/vimdown.git vimdown
 ```
 
-#### Development Workflow (uv)
-```bash
-# Set up development environment
-git clone https://github.com/friscorose/claudedit.git
-cd claudedit
-uv sync                    # Install dependencies
-uv run claudedit          # Run the application
-```
-
-#### Regular Usage
-1. **Launch**: Run `claudedit` (if globally installed) or `uvx claudedit`
-2. **Navigate**: Use file tree to browse to your project directory
-3. **Open/Create**: Click files to open or use `Ctrl+N` for new documents
-4. **Edit**: Type markdown with syntax highlighting
-5. **Format**: Use `Ctrl+F` for quick formatting of selected text
+#### Typical Editing Session
+1. **Launch**: Application starts in INSERT mode
+2. **Navigate**: Use file tree to browse and open files
+3. **Edit**: Start typing immediately (INSERT mode active)
+4. **Format**: Select text and press format keys (`b`, `i`, `s`, etc.)
+5. **Navigate**: Press `Esc` for NORMAL mode, use vim keys
 6. **Preview**: Press `Ctrl+P` to see rendered markdown
-7. **Save**: Use `Ctrl+S` to save regularly
+7. **Save**: Use `Ctrl+S` regularly
 
-### Vim Users
-- **Enable**: Press `Ctrl+V` to toggle vim keybindings
-- **Start mode**: Begins in INSERT mode for immediate typing
-- **Switch modes**: Use `Esc` for NORMAL mode, `i/a/o/O` for INSERT
-- **Navigation**: All basic vim movement keys work in NORMAL mode
-- **Status**: Current vim mode always shown in status bar
+### Visual Mode Formatting Workflow
+1. **Select text**: Mouse selection or `v` + movement in NORMAL mode
+2. **Format instantly**: Press `b` for bold, `i` for italic, `1-6` for headers, etc.
+3. **Automatic return**: Formatting applied and returns to NORMAL mode
+4. **Continue editing**: Press `i` to return to INSERT mode
+
+### Vim Navigation Workflow
+1. **Switch to NORMAL**: Press `Esc` from INSERT mode
+2. **Navigate**: Use `hjkl`, `w`, `b`, `0`, `$`, `g`, `G`
+3. **Edit text**: Use `x`, `d`, `u`, `Ctrl+R`
+4. **Return to INSERT**: Use `i`, `a`, `o`, `O`, `A`, `I`
 
 ### File Management Tips
 - **Directory navigation**: Click folders or ".." to navigate
-- **Tree visibility**: Use `F1` to hide/show tree for more editor space
+- **Tree visibility**: Use `Ctrl+T` to hide/show tree for more editor space
 - **Auto-refresh**: File tree updates after save operations
-- **Unsaved changes**: Title shows `*` prefix for modified files
-
-## Development & Customization
-
-### Project Structure
-```
-claudedit/
-├── pyproject.toml         # uv project configuration
-├── uv.lock               # Locked dependencies
-├── src/
-│   └── claudedit/
-│       ├── __init__.py
-│       └── main.py       # Main application code
-└── README.md
-```
-
-### Development Commands
-```bash
-# Install development dependencies
-uv sync --dev
-
-# Run tests (if available)
-uv run pytest
-
-# Run linting
-uv run ruff check
-
-# Format code
-uv run ruff format
-
-# Run the application in development
-uv run claudedit
-
-# Build for distribution
-uv build
-```
-
-### Environment Management
-```bash
-# Show current environment
-uv python list
-
-# Use specific Python version
-uv python install 3.12
-uv sync --python 3.12
-
-# Show dependency tree
-uv tree
-
-# Update dependencies
-uv sync --upgrade
-```
+- **New files**: `Ctrl+N` creates new document and enters INSERT mode
 
 ## Technical Details
 
+### Vim Mode Implementation
+- **Always active**: No toggle - vim modes are always operational
+- **Mode awareness**: All key handling respects current mode
+- **Visual mode trigger**: Text selection automatically activates VISUAL mode
+- **Formatting integration**: Visual mode provides direct markdown formatting
+- **Status display**: Real-time mode indication in editor border
+
+### Key Binding Conflicts
+The visual mode formatting keys are carefully chosen to avoid conflicts:
+- **Preserves navigation**: `hjkl`, `w`, `0`, `$` work normally in VISUAL mode
+- **Preserves editing**: `y`, `d`, `p` operations not overridden
+- **Intuitive mnemonics**: `b`=bold, `i`=italic, `s`=strikethrough, `c`=code
+- **Shift variations**: `l`=list, `L`=ordered list, `c`=code, `C`=code block
+
 ### Preview Rendering
 - **Engine**: Rich markdown renderer with full formatting support
-- **Update**: Preview refreshes when switching from edit mode
-- **Content**: Stored separately to preserve editor state
-- **Mode switching**: Seamless toggle between edit and preview
+- **Mode switching**: Seamless toggle preserves editor state
+- **Content storage**: Editor content maintained separately during preview
 
 ### File Handling
 - **Encoding**: UTF-8 for all file operations
 - **Auto-detection**: Supported file types identified by extension
 - **Error handling**: Graceful handling of permission/access errors
-- **Path resolution**: Full path support with proper directory navigation
-
-### Vim Implementation
-- **Scope**: Core navigation and editing commands
-- **Modes**: Proper INSERT/NORMAL mode separation
-- **Key handling**: Event-based key processing with mode awareness
-- **Status tracking**: Real-time mode display in status bar
 
 ## Troubleshooting
 
-### Installation Issues
-- **uv not found**: Install uv first: `curl -LsSf https://astral.sh/uv/install.sh | sh`
-- **Git access**: Ensure you have git installed and repository access
-- **Python version**: Requires Python 3.8+ (automatically managed by uv)
+### Mode Confusion
+- **Check border**: Current mode always shown with color coding
+- **ESC to reset**: Press `Esc` to return to NORMAL mode from any state
+- **INSERT for typing**: Press `i` from NORMAL mode to start typing
+- **Visual auto-trigger**: Selecting text automatically enters VISUAL mode
 
-### Runtime Issues
+### Formatting Issues
+- **No selection**: Ensure text is selected before using format keys
+- **Wrong mode**: Format keys only work in VISUAL mode (yellow indicator)
+- **Key not working**: Verify you're using the correct format key (see reference)
+- **Auto-exit**: Formatting keys automatically return to NORMAL mode
+
+### Navigation Issues
+- **Keys not working**: Ensure you're in NORMAL mode (blue indicator)
+- **Text appearing**: You're in INSERT mode - press `Esc` first
+- **Selection extending**: You're in VISUAL mode - press `Esc` to exit
+
+### File Operations
 - **Files not opening**: Ensure file has supported extension (.md, .txt, etc.)
-- **Vim mode confusion**: Check status bar for current mode `[INSERT]` or `[NORMAL]`
-- **Preview not updating**: Switch to edit mode and back to refresh
-- **File tree missing**: Press `F1` to toggle visibility
-- **Formatting not applied**: Ensure text is selected or cursor is on word
+- **Tree missing**: Press `Ctrl+T` to toggle file tree visibility
+- **Save not working**: Check file permissions and disk space
 
-### Performance Notes
-- **Large files**: May take time to load in preview mode
-- **Real-time updates**: Preview renders only when switching modes
-- **Memory usage**: Editor content stored separately during preview
-- **Tree refresh**: Automatic after file operations
+## Comparison: Visual Mode vs Format Menu
 
-### Error Messages
-- **"Cannot open X files"**: File type not supported
-- **"Error opening file"**: Permission or file access issue  
-- **"Error saving file"**: Write permission or disk space issue
-- **"Warning: Unsaved changes"**: Displayed when quitting with modifications
+### Visual Mode Formatting (Recommended)
+- **Speed**: Instant formatting with single key press
+- **Workflow**: Select text → press key → continue editing
+- **Intuitive**: Mnemonic keys (b=bold, i=italic, etc.)
+- **Vim-like**: Integrates perfectly with vim workflow
 
-## Project Configuration
+### Format Menu (Legacy)
+- **Comprehensive**: Shows all available options
+- **Discovery**: Good for learning available formats
+- **Workflow**: Select text → Ctrl+F → choose option → apply
+- **Slower**: Requires menu navigation
 
-### pyproject.toml Example
-```toml
-[project]
-name = "claudedit"
-version = "0.1.0"
-description = "A full-featured terminal markdown editor"
-dependencies = [
-    "textual>=0.41.0",
-    "rich>=13.0.0",
-]
-
-[project.scripts]
-claudedit = "claudedit.main:main"
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.uv]
-dev-dependencies = [
-    "pytest>=7.0",
-    "ruff>=0.1.0",
-]
-```
+**Recommendation**: Use visual mode formatting for speed and efficiency. Use format menu for discovering new formatting options.
 
 ---
 
 *Built with Textual framework for modern terminal user interfaces*  
+*Featuring comprehensive vim keybindings with visual mode markdown formatting*  
 *Managed with uv for fast, reliable Python project management*
