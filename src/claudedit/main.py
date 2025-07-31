@@ -3,11 +3,12 @@
 A full-featured markdown editor built with Textual.
 Features:
 - File tree navigation
-- Syntax-highlighted markdown editing
+- Syntax-highlighted markdown editing with vim modes
 - Live markdown preview
 - File operations (new, open, save, save as)
 - Keyboard shortcuts
-- Vim mode with proper status line display
+- Enhanced Vim mode with INSERT/NORMAL/VISUAL modes
+- Visual mode markdown formatting with intuitive key bindings
 """
 
 from pathlib import Path
@@ -36,42 +37,137 @@ from textual.message import Message
 
 
 class VimTextArea(TextArea):
-    """TextArea with vim keybindings support."""
+    """TextArea with comprehensive vim keybindings support."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.vim_command_mode = False  # False = INSERT, True = NORMAL
-        self._update_vim_status("INSERT")
+        self.vim_mode = "INSERT"  # INSERT, NORMAL, VISUAL
+        self._update_vim_status()
 
-    def _update_vim_status(self, new_status: bool|None = None):
+    def _update_vim_status(self):
         """Update vim status and notify parent."""
-        if new_status is not None:
-            self.vim_command_mode = new_status
-        if self.vim_command_mode:
-            self.vim_status = "NORMAL"
-        else:
-            self.vim_status = "INSERT"
+        self.vim_status = self.vim_mode
+        # Update border subtitle to show current mode
+        mode_colors = {
+            "INSERT": "green",
+            "NORMAL": "blue", 
+            "VISUAL": "yellow"
+        }
+        self.border_subtitle = f"[{mode_colors.get(self.vim_mode, 'white')}]{self.vim_mode}[/]"
+
+    def _enter_insert_mode(self):
+        """Enter INSERT mode."""
+        self.vim_mode = "INSERT"
+        self._update_vim_status()
+
+    def _enter_normal_mode(self):
+        """Enter NORMAL mode."""
+        self.vim_mode = "NORMAL"
+        # Clear any selection when entering normal mode
+        if self.selection.start != self.selection.end:
+            self.selection = self.selection.start
+        self._update_vim_status()
+
+    def _enter_visual_mode(self):
+        """Enter VISUAL mode."""
+        self.vim_mode = "VISUAL"
+        self._update_vim_status()
+
+    def _get_selected_text(self) -> str:
+        """Get currently selected text."""
+        if self.selection.start != self.selection.end:
+            return self.selected_text
+        return ""
+
+    def _replace_selection(self, new_text: str):
+        """Replace selected text with new text."""
+        if self.selection.start != self.selection.end:
+            self.replace(new_text, self.selection.start, self.selection.end)
+
+    def _format_markdown(self, format_type: str, text: str) -> str:
+        """Apply markdown formatting to text."""
+        if not text:
+            text = "text"
+
+        formatters = {
+            "b": lambda t: f"**{t}**",  # Bold
+            "i": lambda t: f"*{t}*",   # Italic  
+            "s": lambda t: f"~~{t}~~", # Strikethrough
+            "c": lambda t: f"`{t}`",   # Code
+            "C": lambda t: f"```\n{t}\n```", # Code block
+            "1": lambda t: f"# {t}",   # Header 1
+            "2": lambda t: f"## {t}",  # Header 2
+            "3": lambda t: f"### {t}", # Header 3  
+            "4": lambda t: f"#### {t}", # Header 4
+            "5": lambda t: f"##### {t}", # Header 5
+            "6": lambda t: f"###### {t}", # Header 6
+            "l": lambda t: f"- {t}",   # Unordered list
+            "L": lambda t: f"1. {t}",  # Ordered list  
+            "q": lambda t: f"> {t}",   # Blockquote
+            "u": lambda t: f"[{t}](url)", # URL/Link
+            "r": lambda t: f"[{t}][ref]", # Reference link
+            "t": lambda t: f"| {t} |", # Table cell
+        }
+        
+        formatter = formatters.get(format_type)
+        return formatter(text) if formatter else text
+
+    def _handle_visual_mode_formatting(self, key: str) -> bool:
+        """Handle markdown formatting in visual mode."""
+        selected_text = self._get_selected_text()
+        if not selected_text:
+            return False
+            
+        # Check if key is a formatting key
+        format_keys = ["b", "i", "s", "c", "C", "1", "2", "3", "4", "5", "6", "l", "L", "q", "u", "r", "t"]
+        
+        if key in format_keys:
+            formatted_text = self._format_markdown(key, selected_text)
+            self._replace_selection(formatted_text)
+            self._enter_normal_mode()
+            return True
+            
+        return False
 
     def on_key(self, event: events.Key) -> None:
         """Handle vim keybindings."""
-        # Handle Escape key to switch to normal mode
+        
+        # Check if we have a selection and should enter VISUAL mode
+        if (self.selection.start != self.selection.end and 
+            self.vim_mode != "VISUAL" and 
+            event.key not in ["escape"]):
+            self._enter_visual_mode()
+
+        # Handle Escape key - always goes to NORMAL mode
         if event.key == "escape":
-                self.vim_command_mode = not self.vim_command_mode
-                self._update_vim_status()
-                event.prevent_default()
-                return
-            # If already in normal mode, just consume the escape
+            self._enter_normal_mode()
             event.prevent_default()
             return
 
-        # Command mode (Normal mode) keybindings
-        if self.vim_command_mode:
+        # VISUAL mode handling
+        if self.vim_mode == "VISUAL":
+            # Try markdown formatting first
+            if self._handle_visual_mode_formatting(event.key):
+                event.prevent_default()
+                return
+                
+            # Handle visual mode navigation (extends selection)
+            if event.key in ["h", "j", "k", "l", "w", "b", "0", "shift+4"]:
+                # Let normal cursor movement handle selection extension
+                return
+            
+            # Other keys exit visual mode
+            if event.key not in ["shift", "ctrl", "alt"]:
+                self._enter_normal_mode()
+                # Don't prevent default, let the key be processed
+
+        # NORMAL mode handling  
+        elif self.vim_mode == "NORMAL":
             handled = True
             
             if event.key == "i":
                 # Enter insert mode at cursor
-                self.vim_command_mode = False
-                self._update_vim_status()
+                self._enter_insert_mode()
                 
             elif event.key == "a":
                 # Enter insert mode after cursor
@@ -79,8 +175,7 @@ class VimTextArea(TextArea):
                 line = self.get_line(row)
                 if col < len(line.plain):
                     self.cursor_location = (row, col + 1)
-                self.vim_command_mode = False
-                self._update_vim_status("INSERT")
+                self._enter_insert_mode()
                 
             elif event.key == "o":
                 # Open new line below and enter insert mode
@@ -88,8 +183,7 @@ class VimTextArea(TextArea):
                 line = self.get_line(row)
                 self.cursor_location = (row, len(line.plain))
                 self.insert("\n")
-                self.vim_command_mode = False
-                self._update_vim_status("INSERT")
+                self._enter_insert_mode()
                 
             elif event.key == "shift+o":
                 # Open new line above and enter insert mode
@@ -97,8 +191,23 @@ class VimTextArea(TextArea):
                 self.cursor_location = (row, 0)
                 self.insert("\n")
                 self.cursor_location = (row, 0)
-                self.vim_command_mode = False
-                self._update_vim_status("INSERT")
+                self._enter_insert_mode()
+                
+            elif event.key == "shift+a":
+                # Enter insert mode at end of line
+                self.action_cursor_line_end()
+                self._enter_insert_mode()
+                
+            elif event.key == "shift+i":
+                # Enter insert mode at beginning of line
+                self.action_cursor_line_start()
+                self._enter_insert_mode()
+                
+            elif event.key == "v":
+                # Enter visual mode and start selection
+                self._enter_visual_mode()
+                # Start selection at current cursor position
+                self.selection = self.cursor_location
                 
             elif event.key == "h":
                 # Move left
@@ -110,7 +219,7 @@ class VimTextArea(TextArea):
                     self.cursor_location = (row - 1, len(prev_line.plain))
                     
             elif event.key == "l":
-                # Move right
+                # Move right  
                 row, col = self.cursor_location
                 line = self.get_line(row)
                 if col < len(line.plain):
@@ -131,7 +240,7 @@ class VimTextArea(TextArea):
                 self.action_cursor_word_right()
                 
             elif event.key == "b":
-                # Move to previous word
+                # Move to previous word (in normal mode)
                 self.action_cursor_word_left()
                 
             elif event.key == "x":
@@ -180,9 +289,17 @@ class VimTextArea(TextArea):
                 event.prevent_default()
                 return
 
-        # If not handled by vim mode, let normal processing continue
-        # but prevent default in command mode to avoid text input
-        if self.vim_command_mode:
+        # INSERT mode - let normal text input happen, but handle special keys
+        elif self.vim_mode == "INSERT":
+            # In insert mode, most keys should work normally
+            # Only handle special vim keys
+            if event.key in ["ctrl+c"]:  # Alternative escape
+                self._enter_normal_mode()
+                event.prevent_default()
+                return
+
+        # If we reach here and we're in NORMAL mode, prevent default to avoid text input
+        if self.vim_mode == "NORMAL":
             event.prevent_default()
 
 
@@ -487,12 +604,10 @@ class MarkdownEditor(App):
         super().__init__()
         self.current_file: Optional[Path] = None
         self.is_modified = False
-        self.preview_mode = False  # Changed from show_preview
+        self.preview_mode = False
         self.show_file_tree = True
         self.current_directory = Path.cwd()
-        self.editor_content = ""  # Store content when in preview mode
-        self.vim_mode = False
-        self.status = ""  # Track current vim status
+        self.editor_content = ""
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -500,7 +615,7 @@ class MarkdownEditor(App):
             yield CustomDirectoryTree(str(self.current_directory), id="file-tree")
             with Vertical(id="editor-container"):
                 yield VimTextArea(
-                    text="# Welcome to Markdown Editor\n\nStart typing your markdown content here...",
+                    text="# Welcome to Vim Markdown Editor\n\nPress 'i' to enter INSERT mode and start typing.\nPress ESC to enter NORMAL mode.\nSelect text to enter VISUAL mode, then:\n- 'b' for **bold**\n- 'i' for *italic*\n- 's' for ~~strikethrough~~\n- 'c' for `code`\n- '1-6' for headers\n- 'l' for lists\n- And many more!\n\nStart typing your markdown content here...",
                     language="markdown",
                     id="text-editor",
                     show_line_numbers=True,
@@ -514,17 +629,16 @@ class MarkdownEditor(App):
 
     def on_mount(self) -> None:
         """Initialize the editor."""
-        self.title = "Markdown Editor"
+        self.title = "Vim Markdown Editor"
         self.sub_title = "Untitled"
-        self.update_status(
-            "Ready - Press ctrl+f to toggle file tree, Ctrl+P to toggle preview"
-        )
+        # Start with editor focused in INSERT mode
+        text_editor = self.query_one("#text-editor", VimTextArea)
+        text_editor.focus()
 
     @on(DirectoryChanged)
     def on_directory_changed(self, event: DirectoryChanged) -> None:
         """Handle directory navigation."""
         self.current_directory = event.path
-        self.update_status(f"Navigated to: {self.current_directory}")
 
     @on(FileSelected)
     def on_file_selected(self, event: FileSelected) -> None:
@@ -534,18 +648,6 @@ class MarkdownEditor(App):
         # Only open markdown files and text files
         if file_path.suffix.lower() in [".md", ".markdown", ".txt", ".text"]:
             self.open_file_path(file_path)
-        else:
-            self.update_status(f"Cannot open {file_path.suffix} files")
-
-    def update_status(self, message: str) -> None:
-        """Update the status bar with vim mode information."""
-        status_bar = self.query_one("#text-editor", VimTextArea)
-        
-        # Build status message with vim mode indicator
-        status_text = f"{message} [{status_bar.vim_status}]"
-        
-        status_bar.border_subtitle = status_text
-        #status_bar.update(status_text)
 
     def update_title(self) -> None:
         """Update the window title based on current file."""
@@ -558,12 +660,9 @@ class MarkdownEditor(App):
     @on(TextArea.Changed, "#text-editor")
     def on_text_changed(self, event: TextArea.Changed) -> None:
         """Handle text changes in the editor."""
-        if not self.preview_mode:  # Only mark as modified if in edit mode
+        if not self.preview_mode:
             self.is_modified = True
             self.update_title()
-
-        # Update status to reflect text change while preserving vim status
-        self.update_status("Text changed")
 
     def update_preview(self) -> None:
         """Update the markdown preview."""
@@ -586,27 +685,16 @@ class MarkdownEditor(App):
             # Switch to edit mode
             text_editor.remove_class("hidden")
             preview_container.add_class("hidden")
-            # Restore the editor content
             text_editor.text = self.editor_content
             text_editor.focus()
             self.preview_mode = False
-            self.update_status("Edit mode - Press Ctrl+P to preview")
         else:
             # Switch to preview mode
-            self.editor_content = text_editor.text  # Store current content
+            self.editor_content = text_editor.text
             text_editor.add_class("hidden")
             preview_container.remove_class("hidden")
             self.update_preview()
             self.preview_mode = True
-            self.update_status("Preview mode - Press Ctrl+P to edit")
-
-    @on(DirectoryTree.FileSelected)
-    def on_directory_tree_file_selected(
-        self, event: DirectoryTree.FileSelected
-    ) -> None:
-        """Handle file selection from the standard directory tree (fallback)."""
-        # This is kept for compatibility but won't be used with CustomDirectoryTree
-        pass
 
     def open_file_path(self, file_path: Path) -> None:
         """Open a file in the editor."""
@@ -618,10 +706,9 @@ class MarkdownEditor(App):
             self.current_file = file_path
             self.is_modified = False
             self.update_title()
-            self.update_status(f"Opened: {file_path}")
 
         except Exception as e:
-            self.update_status(f"Error opening file: {e}")
+            pass  # Could add error handling here
 
     def save_current_file(self) -> bool:
         """Save the current file. Returns True if saved successfully."""
@@ -633,10 +720,8 @@ class MarkdownEditor(App):
             self.current_file.write_text(text_editor.text, encoding="utf-8")
             self.is_modified = False
             self.update_title()
-            self.update_status(f"Saved: {self.current_file}")
             return True
         except Exception as e:
-            self.update_status(f"Error saving file: {e}")
             return False
 
     def save_file_as(self, file_path: Path) -> bool:
@@ -647,7 +732,6 @@ class MarkdownEditor(App):
             self.current_file = file_path
             self.is_modified = False
             self.update_title()
-            self.update_status(f"Saved as: {file_path}")
 
             # Refresh the directory tree
             file_tree = self.query_one("#file-tree", CustomDirectoryTree)
@@ -655,21 +739,20 @@ class MarkdownEditor(App):
 
             return True
         except Exception as e:
-            self.update_status(f"Error saving file: {e}")
             return False
 
     def action_new_file(self) -> None:
         """Create a new file."""
         text_editor = self.query_one("#text-editor", VimTextArea)
         text_editor.text = "# New Document\n\n"
+        text_editor._enter_insert_mode()  # Start in insert mode
         self.current_file = None
         self.is_modified = True
         self.update_title()
-        self.update_status("New file created")
 
     def action_open_file(self) -> None:
-        """Open file dialog (simplified - uses file tree selection)."""
-        self.update_status("Select a file from the file tree to open")
+        """Open file dialog (uses file tree selection)."""
+        pass
 
     def action_save_file(self) -> None:
         """Save the current file."""
@@ -680,7 +763,6 @@ class MarkdownEditor(App):
 
     def action_save_as(self) -> None:
         """Show save as dialog."""
-
         def handle_save_as(result: Optional[Path]) -> None:
             if result:
                 self.save_file_as(result)
@@ -696,64 +778,43 @@ class MarkdownEditor(App):
         if not selected_text:
             selected_text = "text"
 
-        if format_type == "h1":
-            return f"# {selected_text}"
-        elif format_type == "h2":
-            return f"## {selected_text}"
-        elif format_type == "h3":
-            return f"### {selected_text}"
-        elif format_type == "h4":
-            return f"#### {selected_text}"
-        elif format_type == "h5":
-            return f"##### {selected_text}"
-        elif format_type == "h6":
-            return f"###### {selected_text}"
-        elif format_type == "bold":
-            return f"**{selected_text}**"
-        elif format_type == "italic":
-            return f"*{selected_text}*"
-        elif format_type == "bold_italic":
-            return f"***{selected_text}***"
-        elif format_type == "strikethrough":
-            return f"~~{selected_text}~~"
-        elif format_type == "code":
-            return f"`{selected_text}`"
-        elif format_type == "code_block":
-            return f"```\n{selected_text}\n```"
-        elif format_type == "blockquote":
-            lines = selected_text.split("\n")
-            return "\n".join(f"> {line}" for line in lines)
-        elif format_type == "ul":
-            lines = selected_text.split("\n")
-            return "\n".join(f"- {line}" for line in lines)
-        elif format_type == "ol":
-            lines = selected_text.split("\n")
-            return "\n".join(f"{i + 1}. {line}" for i, line in enumerate(lines))
-        elif format_type == "link":
-            return f"[{selected_text}](url)"
-        elif format_type == "image":
-            return f"![{selected_text}](image_url)"
-        elif format_type == "table":
-            return f"| {selected_text} | Column 2 |\n|----------|----------|\n| Row 1    | Data     |\n| Row 2    | Data     |"
-        elif format_type == "hr":
-            return "---"
-        else:
-            return selected_text
+        formatters = {
+            "h1": lambda t: f"# {t}",
+            "h2": lambda t: f"## {t}",
+            "h3": lambda t: f"### {t}",
+            "h4": lambda t: f"#### {t}",
+            "h5": lambda t: f"##### {t}",
+            "h6": lambda t: f"###### {t}",
+            "bold": lambda t: f"**{t}**",
+            "italic": lambda t: f"*{t}*",
+            "bold_italic": lambda t: f"***{t}***",
+            "strikethrough": lambda t: f"~~{t}~~",
+            "code": lambda t: f"`{t}`",
+            "code_block": lambda t: f"```\n{t}\n```",
+            "blockquote": lambda t: "\n".join(f"> {line}" for line in t.split("\n")),
+            "ul": lambda t: "\n".join(f"- {line}" for line in t.split("\n")),
+            "ol": lambda t: "\n".join(f"{i + 1}. {line}" for i, line in enumerate(t.split("\n"))),
+            "link": lambda t: f"[{t}](url)",
+            "image": lambda t: f"![{t}](image_url)",
+            "table": lambda t: f"| {t} | Column 2 |\n|----------|----------|\n| Row 1    | Data     |\n| Row 2    | Data     |",
+            "hr": lambda t: "---"
+        }
+        
+        formatter = formatters.get(format_type)
+        return formatter(selected_text) if formatter else selected_text
 
     def action_format_text(self) -> None:
         """Show the format menu."""
-
         def handle_format(format_type: Optional[str]) -> None:
             if format_type:
                 text_editor = self.query_one("#text-editor", VimTextArea)
-
-                # Get selected text or current word
                 selection = text_editor.selected_text
+                
                 if not selection:
-                    # If no selection, get current word or use placeholder
+                    # Get current word if no selection
                     cursor_pos = text_editor.cursor_location
                     text = text_editor.text
-                    # Simple word extraction (could be improved)
+                    # Simple word extraction
                     start = cursor_pos
                     end = cursor_pos
                     while start > 0 and text[start - 1].isalnum():
@@ -777,20 +838,8 @@ class MarkdownEditor(App):
 
                 self.is_modified = True
                 self.update_title()
-                self.update_status(f"Applied {format_type} formatting")
 
         self.push_screen(FormatMenuScreen(), handle_format)
-
-    def action_go_up_directory(self) -> None:
-        """Navigate to parent directory."""
-        parent = self.current_directory.parent
-        if parent != self.current_directory:  # Prevent going above root
-            self.current_directory = parent
-            file_tree = self.query_one("#file-tree", CustomDirectoryTree)
-            file_tree.navigate_to(self.current_directory)
-            self.update_status(f"Navigated to: {self.current_directory}")
-        else:
-            self.update_status("Already at root directory")
 
     def action_toggle_file_tree(self) -> None:
         """Toggle the file tree visibility."""
@@ -799,16 +848,11 @@ class MarkdownEditor(App):
 
         if self.show_file_tree:
             file_tree.remove_class("hidden")
-            self.update_status("File tree shown")
         else:
             file_tree.add_class("hidden")
-            self.update_status("File tree hidden")
 
     def action_quit(self) -> None:
         """Quit the application."""
-        if self.is_modified:
-            # In a real app, you'd want to show a confirmation dialog
-            self.update_status("Warning: Unsaved changes will be lost!")
         self.exit()
 
 
